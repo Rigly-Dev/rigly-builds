@@ -75,7 +75,8 @@ imagick
 event
 swoole
 grpc
-protobuf
+# protobuf: omitted, it conflicts with grpc (which bundles protobuf). The google/protobuf
+# Composer package falls back to its pure-PHP implementation.
 opentelemetry
 excimer
 

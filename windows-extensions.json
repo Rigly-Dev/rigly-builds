@@ -1,5 +1,5 @@
 {
-  "_comment": "PECL extensions compiled as DLLs for Windows with php/php-windows-builder. Everything else (intl, gd, gmp, xsl, ldap, tidy, gettext, sodium, curl, pdo_sqlite, pdo_pgsql, ...) ships in the official windows.php.net build. 'skip' lists PHP minors to leave out; 'libs' come from https://downloads.php.net/~windows/pecl/deps. 'zend' marks Zend extensions (zend_extension=). 'enable' controls whether php.ini-rigly enables it by default. 'autodetect_libs': false stops the builder fetching libraries it guesses from config.w32 (zstd bundles its own).",
+  "_comment": "PECL extensions compiled as DLLs for Windows with php/php-windows-builder. Everything else (intl, gd, gmp, xsl, ldap, tidy, gettext, sodium, curl, pdo_sqlite, pdo_pgsql, ...) ships in the official windows.php.net build. 'skip' lists PHP minors to leave out; 'libs' come from https://downloads.php.net/~windows/pecl/deps. 'zend' marks Zend extensions (zend_extension=). 'enable' controls whether php.ini-rigly enables it by default. 'autodetect_libs': false stops the builder fetching libraries it guesses from config.w32 (zstd bundles its own). 'refs' overrides the version for specific PHP minors (e.g. a release that adds support for a new PHP).",
   "extensions": [
     {
       "name": "apcu",
@@ -9,7 +9,10 @@
     {
       "name": "igbinary",
       "version": "3.2.16",
-      "enable": true
+      "enable": true,
+      "refs": {
+        "8.5": "3.2.17RC1"
+      }
     },
     {
       "name": "msgpack",

@@ -38,8 +38,10 @@ foreach ($artifact in Get-ChildItem -Directory $Artifacts) {
     }
     $dll = Get-ChildItem -Path $dir.FullName -Recurse -Filter "php_*.dll" | Select-Object -First 1
     if (-not $dll) { Write-Warning "No extension DLL in $($dir.Name)"; continue }
-    $ext = $dll.BaseName -replace '^php_', ''
-    Copy-Item $dll.FullName "$pkg\ext\" -Force
+    # The builder names DLLs like php_imagick-3.8.1-8.5-nts-vs17-x86_64.dll; PHP loads
+    # "extension=imagick" from php_imagick.dll, so strip the version suffix.
+    $ext = ($dll.BaseName -replace '^php_', '') -replace '-\d.*$', ''
+    Copy-Item $dll.FullName "$pkg\ext\php_$ext.dll" -Force
     # Third-party DLLs (ImageMagick, zstd, ...) go next to php.exe so Windows can find them.
     Get-ChildItem -Path $dir.FullName -Recurse -Filter "*.dll" | Where-Object { $_.Name -notlike "php_*" } | ForEach-Object {
         if (-not (Test-Path "$pkg\$($_.Name)")) { Copy-Item $_.FullName $pkg }

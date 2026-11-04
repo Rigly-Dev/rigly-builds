@@ -1,6 +1,6 @@
 # Rigly PHP builds
 
-Static PHP builds for macOS (Apple Silicon and Intel), made with
+PHP builds for macOS (Apple Silicon and Intel), Linux (x86_64 and arm64) and Windows (x64), made with
 [static-php-cli](https://github.com/crazywhalecc/static-php-cli) for Rigly, a local PHP development environment for macOS.
 
 Each PHP minor version (8.1–8.5) is built with the extensions in `extensions.txt` compiled in,
@@ -49,3 +49,11 @@ the `manifest` release.
 
 Not available on Windows: pcntl, posix, sysv*, swoole (Unix-only), and memcached/event (no
 Windows builds of their libraries).
+
+## Linux
+
+`.github/workflows/build-php-linux.yml` runs the same `scripts/build.sh` on `ubuntu-24.04` and
+`ubuntu-24.04-arm`. On Linux it uses static-php-cli's `bin/spc-gnu-docker`, which builds inside a
+CentOS 7 container: everything is statically linked except glibc, so the binaries run on any
+distro with glibc 2.17+ (not musl distros like Alpine) and can load the shared Xdebug/pcov
+extensions. Same extension set as macOS. Index: `manifest-linux.json` on the `manifest` release.

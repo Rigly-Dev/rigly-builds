@@ -79,6 +79,11 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 90
     name: ${{ matrix.name }} ${{ matrix.ref }} (PHP ${{ matrix.minor }})
+    env:
+      # PECL tarballs have no composer.json "php-ext" options, so let the builder derive
+      # --enable-x/--with-x and the needed libraries from each extension's config.w32.
+      auto-detect-args: "true"
+      auto-detect-libs: "true"
     steps:
       - name: Build
         uses: php/php-windows-builder/extension@v1

@@ -1,16 +1,63 @@
 {
-  "_comment": "PECL extensions compiled as DLLs for Windows with php/php-windows-builder. Everything else (intl, gd, gmp, xsl, ldap, tidy, gettext, sodium, curl, pdo_sqlite, pdo_pgsql, ...) ships in the official windows.php.net build. 'skip' lists PHP minors to leave out; 'libs' come from https://downloads.php.net/~windows/pecl/deps. 'zend' marks Zend extensions (zend_extension=). 'enable' controls whether php.ini-rigly enables it by default.",
+  "_comment": "PECL extensions compiled as DLLs for Windows with php/php-windows-builder. Everything else (intl, gd, gmp, xsl, ldap, tidy, gettext, sodium, curl, pdo_sqlite, pdo_pgsql, ...) ships in the official windows.php.net build. 'skip' lists PHP minors to leave out; 'libs' come from https://downloads.php.net/~windows/pecl/deps. 'zend' marks Zend extensions (zend_extension=). 'enable' controls whether php.ini-rigly enables it by default. 'autodetect_libs': false stops the builder fetching libraries it guesses from config.w32 (zstd bundles its own).",
   "extensions": [
-    { "name": "apcu",       "version": "5.1.28", "enable": true },
-    { "name": "igbinary",   "version": "3.2.16", "enable": true },
-    { "name": "msgpack",    "version": "3.0.1",  "enable": true },
-    { "name": "redis",      "version": "6.3.0",  "enable": true },
-    { "name": "imagick",    "version": "3.8.1",  "enable": true, "libs": "ImageMagick-7" },
-    { "name": "mongodb",    "version": "2.5.6",  "enable": true },
-    { "name": "zstd",       "version": "0.18.0", "enable": true, "libs": "zstd" },
-    { "name": "sqlsrv",     "version": "5.13.3", "enable": false },
-    { "name": "pdo_sqlsrv", "version": "5.13.3", "enable": false },
-    { "name": "xdebug",     "version": "3.5.3",  "enable": false, "zend": true },
-    { "name": "pcov",       "version": "1.0.12", "enable": false }
+    {
+      "name": "apcu",
+      "version": "5.1.28",
+      "enable": true
+    },
+    {
+      "name": "igbinary",
+      "version": "3.2.16",
+      "enable": true
+    },
+    {
+      "name": "msgpack",
+      "version": "3.0.1",
+      "enable": true
+    },
+    {
+      "name": "redis",
+      "version": "6.3.0",
+      "enable": true
+    },
+    {
+      "name": "imagick",
+      "version": "3.8.1",
+      "enable": true,
+      "libs": "ImageMagick-7"
+    },
+    {
+      "name": "mongodb",
+      "version": "2.5.6",
+      "enable": true
+    },
+    {
+      "name": "zstd",
+      "version": "0.18.0",
+      "enable": true,
+      "autodetect_libs": false
+    },
+    {
+      "name": "sqlsrv",
+      "version": "5.13.3",
+      "enable": false
+    },
+    {
+      "name": "pdo_sqlsrv",
+      "version": "5.13.3",
+      "enable": false
+    },
+    {
+      "name": "xdebug",
+      "version": "3.5.3",
+      "enable": false,
+      "zend": true
+    },
+    {
+      "name": "pcov",
+      "version": "1.0.12",
+      "enable": false
+    }
   ]
 }

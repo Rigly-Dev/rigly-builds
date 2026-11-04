@@ -63,7 +63,8 @@ jobs:
                                "zip": "https://downloads.php.net/~windows/releases/" + build["zip"]["path"]})
               for ext in config["extensions"]:
                   if minor in ext.get("skip", []): continue
-                  extensions.append({"minor": minor, "name": ext["name"], "ref": ext["version"], "libs": ext.get("libs", "")})
+                  extensions.append({"minor": minor, "name": ext["name"], "ref": ext["version"], "libs": ext.get("libs", ""),
+                                     "autolibs": "true" if ext.get("autodetect_libs", True) else "false"})
           with open(os.environ["GITHUB_OUTPUT"], "a") as out:
               out.write(f"versions={json.dumps({'include': versions})}\n")
               out.write(f"extensions={json.dumps({'include': extensions})}\n")
@@ -83,7 +84,7 @@ jobs:
       # PECL tarballs have no composer.json "php-ext" options, so let the builder derive
       # --enable-x/--with-x and the needed libraries from each extension's config.w32.
       auto-detect-args: "true"
-      auto-detect-libs: "true"
+      auto-detect-libs: ${{ matrix.autolibs }}
     steps:
       - name: Build
         uses: php/php-windows-builder/extension@v1

@@ -1,7 +1,7 @@
 # Rigly PHP builds
 
 Static PHP builds for macOS (Apple Silicon and Intel), made with
-[static-php-cli](https://github.com/crazywhalecc/static-php-cli) for [Rigly](https://github.com/).
+[static-php-cli](https://github.com/crazywhalecc/static-php-cli) for Rigly, a local PHP development environment for macOS.
 
 Each PHP minor version (8.1–8.5) is built with the extensions in `extensions.txt` compiled in,
 plus `shared-extensions.txt` (Xdebug, pcov) as loadable `.so` files that Rigly toggles per version.

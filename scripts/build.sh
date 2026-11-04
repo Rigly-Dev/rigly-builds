@@ -19,7 +19,7 @@ cd "$(dirname "$0")/.."
 PHP_VERSION="${1:?usage: build.sh <php version, e.g. 8.4.23>}"
 MINOR="$(echo "$PHP_VERSION" | cut -d. -f1-2)"
 case "$(uname -m)" in
-    arm64) ARCH=aarch64 ;;
+    arm64|aarch64) ARCH=aarch64 ;;
     x86_64) ARCH=x86_64 ;;
     *) echo "unsupported architecture $(uname -m)" >&2; exit 1 ;;
 esac

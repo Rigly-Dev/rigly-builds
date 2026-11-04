@@ -81,6 +81,6 @@ opentelemetry
 excimer
 
 # Misc
-imap
+imap !8.4 !8.5   # removed from PHP core in 8.4 (now PECL)
 uuid
 zstd

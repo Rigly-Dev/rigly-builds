@@ -6,6 +6,9 @@ on:
       versions:
         description: "PHP minor versions to build (space-separated)"
         default: "8.1 8.2 8.3 8.4 8.5"
+      runners:
+        description: "Runners (architectures) to build on"
+        default: "macos-15 macos-15-intel"
       force:
         description: "Rebuild even if a release for the latest patch already exists"
         type: boolean
@@ -32,6 +35,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSIONS: ${{ inputs.versions || '8.1 8.2 8.3 8.4 8.5' }}
           FORCE: ${{ inputs.force || false }}
+          RUNNERS: ${{ inputs.runners || 'macos-15 macos-15-intel' }}
         run: |
           set -euo pipefail
           entries=()
@@ -43,7 +47,7 @@ jobs:
               echo "PHP $full macOS build already released; skipping"; continue
             fi
             echo "Will build PHP $full"
-            for runner in macos-15 macos-15-intel; do
+            for runner in $RUNNERS; do
               entries+=("{\"php\":\"$full\",\"runner\":\"$runner\"}")
             done
           done

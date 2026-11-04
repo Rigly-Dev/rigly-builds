@@ -52,7 +52,10 @@ echo "shared: $SHARED_EXTS"
 
 # On Linux the Docker image runs doctor while it is built.
 [ "$PLATFORM" = macos ] && spc doctor --auto-fix
-spc download --with-php="$PHP_VERSION" --for-extensions="$STATIC_EXTS,$SHARED_EXTS" --prefer-pre-built --retry=3
+# The downloads cache may come from another PHP version's job; always fetch php-src itself fresh,
+# or static-php-cli reuses the cached one and builds the wrong version.
+spc download --with-php="$PHP_VERSION" --for-extensions="$STATIC_EXTS,$SHARED_EXTS" --prefer-pre-built --retry=3 \
+    --ignore-cache-sources=php-src
 spc build "$STATIC_EXTS" --build-cli --build-fpm --build-shared="$SHARED_EXTS" --debug
 
 BUILDROOT="$WORK/buildroot"

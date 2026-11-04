@@ -35,3 +35,17 @@ tar -xzf spc.tgz && scripts/build.sh 8.4.23
 ```
 
 Note: `sqlsrv`/`pdo_sqlsrv` also need Microsoft's ODBC driver (msodbcsql18) installed to connect.
+
+## Windows
+
+`.github/workflows/build-php-windows.yml` packages the official windows.php.net NTS x64 build
+(which already includes intl, gd, gmp, xsl, ldap, tidy, gettext, sodium, curl, pdo_sqlite,
+pdo_pgsql, ...) with PECL extensions compiled by
+[php/php-windows-builder](https://github.com/php/php-windows-builder): Imagick (with ImageMagick's
+DLLs), Redis, igbinary, msgpack, APCu, MongoDB, zstd, sqlsrv/pdo_sqlsrv, Xdebug and pcov — see
+`windows-extensions.json`. Each package has a `php.ini-rigly` with everything enabled except
+Xdebug, pcov and sqlsrv, and is smoke-tested before release. Index: `manifest-windows.json` on
+the `manifest` release.
+
+Not available on Windows: pcntl, posix, sysv*, swoole (Unix-only), and memcached/event (no
+Windows builds of their libraries).

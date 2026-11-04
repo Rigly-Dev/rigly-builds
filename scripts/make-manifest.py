@@ -3,7 +3,8 @@
 
     make-manifest.py <artifacts dir> <owner/repo> [existing manifest.json] > manifest.json
 
-Each build contributes php-<version>-macos-<arch>.{tar.gz,tar.gz.sha256,json}. Entries for PHP
+Each build contributes php-<version>-<platform>-<arch>.{tar.gz|zip,.sha256,json}
+(macOS: php-8.4.27-macos-aarch64.tar.gz, Windows: php-8.4.27-windows-x64.zip). Entries for PHP
 versions not rebuilt this run are kept from the existing manifest.
 """
 import datetime
@@ -21,13 +22,17 @@ def main() -> None:
         with open(existing) as f:
             manifest = json.load(f)
 
-    for meta_path in sorted(glob.glob(os.path.join(artifacts, "**", "php-*-macos-*.json"), recursive=True)):
+    for meta_path in sorted(glob.glob(os.path.join(artifacts, "**", "php-*.json"), recursive=True)):
         with open(meta_path) as f:
             build = json.load(f)
         version, arch = build["php"], build["arch"]
         minor = ".".join(version.split(".")[:2])
         base = os.path.basename(meta_path)[: -len(".json")]
-        tarball = os.path.join(os.path.dirname(meta_path), base + ".tar.gz")
+        candidates = [os.path.join(os.path.dirname(meta_path), base + ext) for ext in (".tar.gz", ".zip")]
+        tarball = next((c for c in candidates if os.path.exists(c)), None)
+        if tarball is None:
+            print(f"warning: no archive for {meta_path}", file=sys.stderr)
+            continue
         with open(tarball + ".sha256") as f:
             sha256 = f.read().strip()
 
@@ -36,11 +41,12 @@ def main() -> None:
         if entry is None or entry["version"] != version:
             entry = {"version": version, "assets": {}}
         entry["assets"][arch] = {
-            "url": f"https://github.com/{repo}/releases/download/php-{version}/{base}.tar.gz",
+            "url": f"https://github.com/{repo}/releases/download/php-{version}/{os.path.basename(tarball)}",
             "sha256": sha256,
             "size": os.path.getsize(tarball),
             "extensions": build["extensions"],
             "shared": build["shared"],
+            **({"build": build["build"]} if "build" in build else {}),
             "built_at": build["built_at"],
         }
         manifest["php"][minor] = entry

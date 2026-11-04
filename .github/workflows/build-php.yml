@@ -1,0 +1,136 @@
+name: Build PHP
+
+on:
+  workflow_dispatch:
+    inputs:
+      versions:
+        description: "PHP minor versions to build (space-separated)"
+        default: "8.1 8.2 8.3 8.4 8.5"
+      force:
+        description: "Rebuild even if a release for the latest patch already exists"
+        type: boolean
+        default: false
+  schedule:
+    # Mondays 03:00 UTC: picks up new PHP patch releases (unchanged versions are skipped).
+    - cron: "0 3 * * 1"
+
+permissions:
+  contents: write
+
+env:
+  SPC_VERSION: "2.8.5"
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      any: ${{ steps.plan.outputs.any }}
+    steps:
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSIONS: ${{ inputs.versions || '8.1 8.2 8.3 8.4 8.5' }}
+          FORCE: ${{ inputs.force || false }}
+        run: |
+          set -euo pipefail
+          entries=()
+          for minor in $VERSIONS; do
+            full=$(curl -fsSL "https://www.php.net/releases/index.php?json&version=$minor" | jq -r '.version // empty')
+            if [ -z "$full" ]; then echo "::warning::No release found for PHP $minor"; continue; fi
+            if [ "$FORCE" != "true" ] && gh release view "php-$full" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "PHP $full already released; skipping"; continue
+            fi
+            echo "Will build PHP $full"
+            for runner in macos-15 macos-15-intel; do
+              entries+=("{\"php\":\"$full\",\"runner\":\"$runner\"}")
+            done
+          done
+          if [ ${#entries[@]} -eq 0 ]; then
+            echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"; echo "any=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "matrix={\"include\":[$(IFS=,; echo "${entries[*]}")]}" >> "$GITHUB_OUTPUT"; echo "any=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.any == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 240
+    name: PHP ${{ matrix.php }} (${{ matrix.runner }})
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install static-php-cli
+        run: |
+          arch=$([ "$(uname -m)" = arm64 ] && echo aarch64 || echo x86_64)
+          curl -fsSL -o spc.tgz "https://github.com/crazywhalecc/static-php-cli/releases/download/$SPC_VERSION/spc-macos-$arch.tar.gz"
+          tar -xzf spc.tgz && rm spc.tgz && chmod +x spc && ./spc --version
+
+      - name: Cache downloads
+        uses: actions/cache@v4
+        with:
+          path: downloads
+          key: spc-dl-${{ matrix.runner }}-${{ matrix.php }}-${{ env.SPC_VERSION }}-${{ hashFiles('extensions.txt', 'shared-extensions.txt') }}
+          restore-keys: spc-dl-${{ matrix.runner }}-
+
+      - name: Build
+        env:
+          GITHUB_TOKEN: ${{ github.token }} # spc uses it to avoid GitHub API rate limits
+        run: scripts/build.sh "${{ matrix.php }}"
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.php }}-${{ matrix.runner }}
+          path: log/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: php-${{ matrix.php }}-${{ matrix.runner }}
+          path: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
+            dist/*.json
+          if-no-files-found: error
+
+  release:
+    needs: [plan, build]
+    # Publish whatever succeeded, even if some versions failed.
+    if: always() && needs.plan.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: php-*
+      - name: Publish releases and manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for meta in artifacts/*/php-*-macos-*.json; do
+            version=$(jq -r .php "$meta")
+            tag="php-$version"
+            if ! gh release view "$tag" >/dev/null 2>&1; then
+              gh release create "$tag" --title "PHP $version" \
+                --notes "PHP $version for Rigly (macOS). Extensions are listed in each build's .json." --latest=false
+            fi
+            base="${meta%.json}"
+            gh release upload "$tag" "$base.tar.gz" "$base.tar.gz.sha256" "$meta" --clobber
+          done
+
+          # manifest.json lives on a fixed "manifest" release so its URL never changes:
+          # https://github.com/<owner>/<repo>/releases/download/manifest/manifest.json
+          gh release view manifest >/dev/null 2>&1 || \
+            gh release create manifest --title "Manifest" --notes "Index of Rigly PHP builds (read by Rigly)." --latest=false
+          gh release download manifest -p manifest.json -O previous.json 2>/dev/null || echo '{"schema":1,"php":{}}' > previous.json
+          python3 scripts/make-manifest.py artifacts "$GITHUB_REPOSITORY" previous.json > manifest.json
+          cat manifest.json
+          gh release upload manifest manifest.json --clobber

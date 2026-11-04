@@ -1,0 +1,85 @@
+# Extensions compiled into every Rigly PHP build (static-php-cli names).
+# One per line. Append "!8.1" (etc.) to skip an extension for a PHP minor version,
+# e.g. when it doesn't support that version yet:   swoole !8.5
+#
+# Shared (loadable, toggled by Rigly) extensions are listed in shared-extensions.txt.
+
+# Core / standard
+bcmath
+bz2
+calendar
+ctype
+curl
+dba
+dom
+exif
+fileinfo
+filter
+ftp
+gettext
+gmp
+iconv
+intl
+mbregex
+mbstring
+opcache
+openssl
+pcntl
+phar
+posix
+readline
+session
+shmop
+simplexml
+soap
+sockets
+sodium
+sysvmsg
+sysvsem
+sysvshm
+tidy
+tokenizer
+xml
+xmlreader
+xmlwriter
+xsl
+zip
+zlib
+ldap
+
+# Databases
+mysqli
+mysqlnd
+pdo
+pdo_mysql
+pdo_pgsql
+pdo_sqlite
+pgsql
+sqlite3
+sqlsrv
+pdo_sqlsrv
+mongodb
+
+# Caching & serialisation
+apcu
+igbinary
+msgpack
+memcached
+redis
+
+# Images
+gd
+imagick
+
+# Async / networking / observability
+event
+swoole
+grpc
+protobuf
+opentelemetry
+excimer
+
+# Misc
+imap
+uuid
+zstd

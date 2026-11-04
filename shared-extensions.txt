@@ -1,0 +1,3 @@
+# Built as loadable .so files; Rigly enables them per PHP version (off by default).
+xdebug
+pcov

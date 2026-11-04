@@ -1,0 +1,7 @@
+dist/
+buildroot/
+source/
+downloads/
+spc
+log/
+.DS_Store

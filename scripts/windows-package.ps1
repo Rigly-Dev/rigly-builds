@@ -23,17 +23,25 @@ Write-Host "Downloading $ZipUrl"
 Invoke-WebRequest -Uri $ZipUrl -OutFile "$env:TEMP\php.zip"
 Expand-Archive -Path "$env:TEMP\php.zip" -DestinationPath $pkg -Force
 
-# Extension artifacts: one directory per extension, named like php_imagick-3.8.1-8.4-nts-vs17-x64.
+# Extension artifacts: one directory per extension, named like php_imagick-3.8.1-8.4-nts-vs17-x86_64.zip,
+# each containing a zip of the DLL, its dependency DLLs, config files and licenses.
 $config = Get-Content $Config | ConvertFrom-Json
 $built = @()
-foreach ($dir in Get-ChildItem -Directory $Artifacts) {
-    if ($dir.Name -notmatch "-$([regex]::Escape($minor))-nts-") { continue }
-    $dll = Get-ChildItem -Path $dir.FullName -Filter "php_*.dll" | Select-Object -First 1
+foreach ($artifact in Get-ChildItem -Directory $Artifacts) {
+    if ($artifact.Name -notmatch "-$([regex]::Escape($minor))-nts-") { continue }
+    $dir = $artifact
+    $inner = Get-ChildItem -Path $artifact.FullName -Filter "*.zip" | Select-Object -First 1
+    if ($inner) {
+        $extracted = Join-Path $env:TEMP ("rigly-" + $artifact.Name)
+        Expand-Archive -Path $inner.FullName -DestinationPath $extracted -Force
+        $dir = Get-Item $extracted
+    }
+    $dll = Get-ChildItem -Path $dir.FullName -Recurse -Filter "php_*.dll" | Select-Object -First 1
     if (-not $dll) { Write-Warning "No extension DLL in $($dir.Name)"; continue }
     $ext = $dll.BaseName -replace '^php_', ''
     Copy-Item $dll.FullName "$pkg\ext\" -Force
     # Third-party DLLs (ImageMagick, zstd, ...) go next to php.exe so Windows can find them.
-    Get-ChildItem -Path $dir.FullName -Filter "*.dll" | Where-Object { $_.Name -notlike "php_*" } | ForEach-Object {
+    Get-ChildItem -Path $dir.FullName -Recurse -Filter "*.dll" | Where-Object { $_.Name -notlike "php_*" } | ForEach-Object {
         if (-not (Test-Path "$pkg\$($_.Name)")) { Copy-Item $_.FullName $pkg }
     }
     if (Test-Path "$($dir.FullName)\config") {
@@ -46,6 +54,10 @@ foreach ($dir in Get-ChildItem -Directory $Artifacts) {
     $built += $ext
 }
 Write-Host "Extension DLLs: $($built -join ', ')"
+# Every configured extension (not skipped for this PHP version) must be present.
+$wanted = $config.extensions | Where-Object { -not ($_.skip -and ($_.skip -contains $minor)) } | ForEach-Object { $_.name }
+$missing = $wanted | Where-Object { $built -notcontains $_ }
+if ($missing) { throw "Extension builds missing for PHP ${minor}: $($missing -join ', ')" }
 
 # php.ini-rigly: everything useful enabled except debuggers/coverage (enable those when needed).
 $core = "bz2 curl exif fileinfo ftp gd gettext gmp intl ldap mbstring mysqli openssl pdo_mysql pdo_pgsql pdo_sqlite pgsql soap sockets sodium sqlite3 tidy xsl zip" -split ' '

@@ -25,7 +25,9 @@ Expand-Archive -Path "$env:TEMP\php.zip" -DestinationPath $pkg -Force
 
 # Extension artifacts: one directory per extension, named like php_imagick-3.8.1-8.4-nts-vs17-x86_64.zip,
 # each containing a zip of the DLL, its dependency DLLs, config files and licenses.
-$config = Get-Content $Config | ConvertFrom-Json
+# Not "$config": PowerShell variables are case-insensitive, so that would be the [string] $Config
+# parameter and the parsed JSON would silently become a string.
+$extConfig = Get-Content $Config | ConvertFrom-Json
 $built = @()
 foreach ($artifact in Get-ChildItem -Directory $Artifacts) {
     if ($artifact.Name -notmatch "-$([regex]::Escape($minor))-nts-") { continue }
@@ -57,7 +59,7 @@ foreach ($artifact in Get-ChildItem -Directory $Artifacts) {
 }
 Write-Host "Extension DLLs: $($built -join ', ')"
 # Every configured extension (not skipped for this PHP version) must be present.
-$wanted = $config.extensions | Where-Object { -not ($_.skip -and ($_.skip -contains $minor)) } | ForEach-Object { $_.name }
+$wanted = $extConfig.extensions | Where-Object { -not ($_.skip -and ($_.skip -contains $minor)) } | ForEach-Object { $_.name }
 $missing = $wanted | Where-Object { $built -notcontains $_ }
 if ($missing) { throw "Extension builds missing for PHP ${minor}: $($missing -join ', ')" }
 
@@ -73,7 +75,7 @@ $ini = @(
 foreach ($ext in $core) { if (Test-Path "$pkg\ext\php_$ext.dll") { $ini += "extension=$ext" } }
 if (Test-Path "$pkg\ext\php_opcache.dll") { $ini += "zend_extension=opcache" }
 $ini += "", "; Added by Rigly"
-foreach ($e in $config.extensions) {
+foreach ($e in $extConfig.extensions) {
     if ($built -notcontains $e.name) { continue }
     $directive = if ($e.zend) { "zend_extension" } else { "extension" }
     $prefix = if ($e.enable) { "" } else { ";" }
@@ -93,13 +95,13 @@ function Check($label, [string[]] $phpArgs) {
 }
 Write-Host "Smoke testing $name"
 Check "php runs" @("-v")
-$expected = ($config.extensions | Where-Object { $_.enable -and ($built -contains $_.name) } | ForEach-Object { $_.name }) -join ','
+$expected = ($extConfig.extensions | Where-Object { $_.enable -and ($built -contains $_.name) } | ForEach-Object { $_.name }) -join ','
 Check "enabled extensions load ($expected)" @("-r", "foreach (explode(',', '$expected') as `$e) if (`$e && !extension_loaded(`$e)) { fwrite(STDERR, `"missing `$e`n`"); exit(1); }")
 Check "pdo_sqlite is complete" @("-r", "`$p = new PDO('sqlite::memory:'); if (PHP_VERSION_ID >= 80400 && !class_exists('Pdo\\Sqlite')) exit(1); `$p->sqliteCreateFunction('t', fn(`$x) => `$x * 2, 1); exit(`$p->query('SELECT t(21)')->fetchColumn() == 42 ? 0 : 1);")
 if ($built -contains "imagick") {
     Check "imagick renders" @("-r", "`$i = new Imagick('logo:'); `$i->setImageFormat('png'); exit(strlen(`$i->getImageBlob()) > 1000 ? 0 : 1);")
 }
-foreach ($e in $config.extensions | Where-Object { -not $_.enable -and ($built -contains $_.name) }) {
+foreach ($e in $extConfig.extensions | Where-Object { -not $_.enable -and ($built -contains $_.name) }) {
     $directive = if ($e.zend) { "zend_extension" } else { "extension" }
     Check "$($e.name) loads" @("-d", "$directive=$($e.name)", "-r", "exit(extension_loaded('$($e.name)') ? 0 : 1);")
 }
@@ -112,7 +114,7 @@ $modules = & $php -c "$pkg\php.ini-rigly" -d "extension_dir=$extDir" -m | Where-
     build = $Version
     arch = "windows-x64"
     extensions = @($modules | Sort-Object -Unique)
-    shared = @($config.extensions | Where-Object { -not $_.enable -and ($built -contains $_.name) } | ForEach-Object { $_.name })
+    shared = @($extConfig.extensions | Where-Object { -not $_.enable -and ($built -contains $_.name) } | ForEach-Object { $_.name })
     pecl = $built
     built_at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 } | ConvertTo-Json | Set-Content "$pkg\BUILD.json" -Encoding utf8

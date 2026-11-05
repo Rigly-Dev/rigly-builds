@@ -9,6 +9,9 @@ on:
       versions:
         description: "PHP minor versions to build (space-separated)"
         default: "8.1 8.2 8.3 8.4 8.5"
+      runners:
+        description: "Runners (architectures) to build on"
+        default: "ubuntu-24.04 ubuntu-24.04-arm"
       force:
         description: "Rebuild even if a release for the latest patch already exists"
         type: boolean
@@ -35,6 +38,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSIONS: ${{ inputs.versions || '8.1 8.2 8.3 8.4 8.5' }}
           FORCE: ${{ inputs.force || false }}
+          RUNNERS: ${{ inputs.runners || 'ubuntu-24.04 ubuntu-24.04-arm' }}
         run: |
           set -euo pipefail
           entries=()
@@ -46,7 +50,7 @@ jobs:
               echo "PHP $full Linux build already released; skipping"; continue
             fi
             echo "Will build PHP $full"
-            for runner in ubuntu-24.04 ubuntu-24.04-arm; do
+            for runner in $RUNNERS; do
               entries+=("{\"php\":\"$full\",\"runner\":\"$runner\"}")
             done
           done

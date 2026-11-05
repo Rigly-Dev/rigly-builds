@@ -73,7 +73,7 @@ imagick
 
 # Async / networking / observability
 event
-swoole
+swoole !8.1   # current Swoole requires PHP 8.2+
 grpc
 # protobuf: omitted, it conflicts with grpc (which bundles protobuf). The google/protobuf
 # Composer package falls back to its pure-PHP implementation.

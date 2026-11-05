@@ -106,6 +106,18 @@ if [ "$PLATFORM" = macos ]; then
     perl -0pi -e 's/^(option\(ENABLE_ARES [^\n]*\))$/$1\nset(ENABLE_ARES OFF CACHE BOOL "Rigly: use the macOS resolver" FORCE)/m' "$WORK/source/curl/CMakeLists.txt"
     grep -q 'Rigly: use the macOS resolver' "$WORK/source/curl/CMakeLists.txt" || { echo "curl c-ares patch failed" >&2; exit 1; }
 fi
+# PHP 7.4/8.0 source fixes for current toolchains:
+#  - GD's configure test defines `char foobar () {}` (no return value); current Apple clang traps on
+#    it, so the test program crashes and configure reports "GD build test failed".
+#  - ICU 75+ headers need C++17, but 7.4/8.0's ext/intl asks for C++11.
+case "$MINOR" in 7.4|8.0)
+    spc extract php-src --source-only
+    perl -pi -e 's/\[char foobar \(\) \{\}\]/[char foobar (void) { return 0; }]/' "$WORK/source/php-src/ext/gd/config.m4"
+    perl -pi -e 's/PHP_CXX_COMPILE_STDCXX\(11,/PHP_CXX_COMPILE_STDCXX(17,/' "$WORK/source/php-src/ext/intl/config.m4"
+    grep -q 'char foobar (void) { return 0; }' "$WORK/source/php-src/ext/gd/config.m4" || { echo "GD patch failed" >&2; exit 1; }
+    grep -q 'PHP_CXX_COMPILE_STDCXX(17,' "$WORK/source/php-src/ext/intl/config.m4" || { echo "intl patch failed" >&2; exit 1; }
+    ;;
+esac
 spc build "$STATIC_EXTS" --build-cli --build-fpm --build-shared="$SHARED_EXTS" --debug
 
 BUILDROOT="$WORK/buildroot"

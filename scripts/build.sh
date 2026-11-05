@@ -131,6 +131,13 @@ case "$MINOR" in 7.4|8.0)
     grep -q 'ICU_CXXFLAGS -std=c++17"' "$WORK/source/php-src/ext/intl/config.m4" || { echo "intl -std patch failed" >&2; exit 1; }
     grep -q 'Rigly: GD build test removed' "$WORK/source/php-src/ext/gd/config.m4" || { echo "GD patch failed" >&2; exit 1; }
     grep -q 'PHP_CXX_COMPILE_STDCXX(17,' "$WORK/source/php-src/ext/intl/config.m4" || { echo "intl patch failed" >&2; exit 1; }
+    # sqlsrv/pdo_sqlsrv 5.10 (pinned below 8.1) append -std=c++11 to the global CXXFLAGS, which come
+    # after intl's -std=c++17 and win; ICU 75+ headers need C++17.
+    spc extract sqlsrv pdo_sqlsrv --source-only
+    for ext in sqlsrv pdo_sqlsrv; do
+        perl -pi -e 's/-std=c\+\+11/-std=c++17/g' "$WORK/source/php-src/ext/$ext/config.m4"
+        ! grep -q 'std=c++11' "$WORK/source/php-src/ext/$ext/config.m4" || { echo "$ext -std patch failed" >&2; exit 1; }
+    done
     # Where a PHP is on PATH (the Linux build container), make regenerates extensions' *_arginfo.h
     # from their stubs with 8.0's gen_stub.php, which can't parse newer stubs (ext-zstd's `const`:
     # "Unexpected node Stmt_Const"). Extensions ship their arginfo headers, so keep those: make the
@@ -138,7 +145,13 @@ case "$MINOR" in 7.4|8.0)
     printf '<?php\n// Rigly: arginfo regeneration disabled for PHP %s builds.\n' "$MINOR" > "$WORK/source/php-src/build/gen_stub.php"
     ;;
 esac
-spc build "$STATIC_EXTS" --build-cli --build-fpm --build-shared="$SHARED_EXTS" --debug
+BUILD_FLAGS=()
+# PHP 8.0's OPcache JIT (x86_64 only; arm64 has no JIT before 8.1) makes the Intel macOS binary abort at
+# startup with a stack-protector failure during module startup. 7.4 has no JIT.
+if [ "$MINOR" = 8.0 ] && [ "$(uname -s)" = Darwin ] && [ "$(uname -m)" = x86_64 ]; then
+    BUILD_FLAGS+=(--disable-opcache-jit)
+fi
+spc build "$STATIC_EXTS" --build-cli --build-fpm --build-shared="$SHARED_EXTS" --debug ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"}
 
 BUILDROOT="$WORK/buildroot"
 BUILT="$("$BUILDROOT/bin/php" -r 'echo PHP_VERSION;')"

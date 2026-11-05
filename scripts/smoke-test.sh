@@ -45,7 +45,8 @@ check "openssl + curl https" "$PHP" -n -r 'exit(in_array("https", curl_version()
 check "no pre-release shared extensions" "$PHP" -n -r '
     $v = json_decode(file_get_contents($argv[1]), true)["shared_versions"] ?? [];
     foreach ($v as $name => $version) {
-        if ($version === "" || preg_match("/alpha|beta|rc|dev/i", $version)) { fwrite(STDERR, "$name $version\n"); exit(1); }
+        // Stable releases only: a plain x.y.z (anything else is a pre-release or a failed load).
+        if (!preg_match("/^\\d+\\.\\d+\\.\\d+$/", $version)) { fwrite(STDERR, "$name $version\n"); exit(1); }
         echo "$name $version\n";
     }
 ' "$DIR/BUILD.json"

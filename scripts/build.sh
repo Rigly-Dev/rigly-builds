@@ -100,7 +100,7 @@ fi
 
 SPC_REPORTED="$(spc --version 2>/dev/null | tail -1 || true)"
 python3 - "$OUT" "$PHP_VERSION" "$ARCH_KEY" "$STATIC_EXTS" "$SHARED_EXTS" "$SPC_REPORTED" <<'PY'
-import json, subprocess, sys, datetime, os
+import json, re, subprocess, sys, datetime, os
 out, version, arch, static, shared, spc = sys.argv[1:]
 modules = subprocess.run([os.path.join(out, "php"), "-n", "-m"], capture_output=True, text=True, check=True).stdout
 loaded = sorted({m.strip() for m in modules.splitlines() if m.strip() and not m.startswith("[")}, key=str.lower)
@@ -108,10 +108,10 @@ loaded = sorted({m.strip() for m in modules.splitlines() if m.strip() and not m.
 shared_versions = {}
 for name in (shared.split(",") if shared else []):
     directive = "zend_extension" if name == "xdebug" else "extension"
-    so = os.path.join(out, "ext", f"{name}.so")
+    so = os.path.abspath(os.path.join(out, "ext", f"{name}.so"))
     v = subprocess.run([os.path.join(out, "php"), "-n", "-d", f"{directive}={so}", "-r", f"echo phpversion('{name}');"],
                        capture_output=True, text=True).stdout.strip()
-    shared_versions[name] = v
+    shared_versions[name] = v if re.fullmatch(r"[0-9][0-9A-Za-z.\-]*", v) else ""
 json.dump({
     "php": version,
     "arch": arch,

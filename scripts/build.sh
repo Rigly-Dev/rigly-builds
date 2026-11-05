@@ -133,7 +133,7 @@ case "$MINOR" in 7.4|8.0)
     grep -q 'PHP_CXX_COMPILE_STDCXX(17,' "$WORK/source/php-src/ext/intl/config.m4" || { echo "intl patch failed" >&2; exit 1; }
     # sqlsrv/pdo_sqlsrv 5.10 (pinned below 8.1) append -std=c++11 to the global CXXFLAGS, which come
     # after intl's -std=c++17 and win; ICU 75+ headers need C++17.
-    spc extract sqlsrv pdo_sqlsrv --source-only
+    spc extract sqlsrv,pdo_sqlsrv --source-only
     for ext in sqlsrv pdo_sqlsrv; do
         perl -pi -e 's/-std=c\+\+11/-std=c++17/g' "$WORK/source/php-src/ext/$ext/config.m4"
         ! grep -q 'std=c++11' "$WORK/source/php-src/ext/$ext/config.m4" || { echo "$ext -std patch failed" >&2; exit 1; }

@@ -23,6 +23,10 @@ case "$(uname -m)" in
     x86_64) ARCH=x86_64 ;;
     *) echo "unsupported architecture $(uname -m)" >&2; exit 1 ;;
 esac
+# Newer autoconf switches clang to C23 (-std=gnu23), which removed the K&R-style function
+# definitions PHP 8.1/8.2 still use (e.g. ext/bcmath). Tell configure C23 isn't available.
+case "$MINOR" in 8.1|8.2) export ac_cv_prog_cc_c23=no ;; esac
+
 ROOT="$(pwd)"
 SPC_VERSION="${SPC_VERSION:-2.8.5}"
 case "$(uname -s)" in

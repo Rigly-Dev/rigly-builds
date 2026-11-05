@@ -95,7 +95,8 @@ jobs:
           set +e
           "$php" -n -r 'echo "ok\n";'; echo "exit code: $?"
           otool -L "$php" | head -20
-          lldb --batch -o run -o "thread backtrace all" -o quit -- "$php" -n -r 'echo 1;' 2>&1 | tail -60
+          # -k commands run after a crash (-o ones stop at the crash).
+          lldb --batch -o run -k "thread backtrace all" -k quit -- "$php" -n -r 'echo 1;' 2>&1 | tail -60
 
       - name: Upload build logs on failure
         if: failure()

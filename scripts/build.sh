@@ -43,7 +43,14 @@ esac
 # The value is quoted: unquoted, PHP's INI parser turns "yes" into "1" and spc compares against "yes".
 mkdir -p "$WORK/config"
 if [ "$MINOR" = 7.4 ]; then
-    printf '[global]\nSPC_SKIP_PHP_VERSION_CHECK="yes"\n' > "$WORK/config/env.custom.ini"
+    # 7.4's ext/libxml passes a non-const error handler where libxml2 2.12+ expects a const one;
+    # current Apple clang makes that an error, so keep it a warning (spc's macOS default plus one flag).
+    cat > "$WORK/config/env.custom.ini" <<'INI'
+[global]
+SPC_SKIP_PHP_VERSION_CHECK="yes"
+[macos]
+SPC_CMD_VAR_PHP_MAKE_EXTRA_CFLAGS="-g -fstack-protector-strong -fpic -fpie -Werror=unknown-warning-option -Wno-error=incompatible-function-pointer-types ${SPC_DEFAULT_C_FLAGS}"
+INI
 else
     rm -f "$WORK/config/env.custom.ini"
 fi
@@ -121,6 +128,10 @@ case "$MINOR" in 7.4|8.0)
     perl -pi -e 's/PHP_CXX_COMPILE_STDCXX\(11,/PHP_CXX_COMPILE_STDCXX(17,/' "$WORK/source/php-src/ext/intl/config.m4"
     grep -q 'Rigly: GD build test removed' "$WORK/source/php-src/ext/gd/config.m4" || { echo "GD patch failed" >&2; exit 1; }
     grep -q 'PHP_CXX_COMPILE_STDCXX(17,' "$WORK/source/php-src/ext/intl/config.m4" || { echo "intl patch failed" >&2; exit 1; }
+    # Where a PHP is on PATH (the Linux build container), make regenerates extensions' *_arginfo.h
+    # from their stubs with 8.0's gen_stub.php, which can't parse newer stubs (ext-zstd's `const`:
+    # "Unexpected node Stmt_Const"). Extensions ship their arginfo headers, so keep those.
+    rm -f "$WORK/source/php-src/build/gen_stub.php"
     ;;
 esac
 spc build "$STATIC_EXTS" --build-cli --build-fpm --build-shared="$SHARED_EXTS" --debug

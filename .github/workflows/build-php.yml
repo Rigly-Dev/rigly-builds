@@ -87,6 +87,16 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }} # spc uses it to avoid GitHub API rate limits
         run: scripts/build.sh "${{ matrix.php }}"
 
+      - name: Diagnose a crashing PHP binary
+        if: failure()
+        run: |
+          php=buildroot/bin/php
+          [ -x "$php" ] || { echo "no PHP binary was built"; exit 0; }
+          set +e
+          "$php" -n -r 'echo "ok\n";'; echo "exit code: $?"
+          otool -L "$php" | head -20
+          lldb --batch -o run -o "thread backtrace all" -o quit -- "$php" -n -r 'echo 1;' 2>&1 | tail -60
+
       - name: Upload build logs on failure
         if: failure()
         uses: actions/upload-artifact@v4

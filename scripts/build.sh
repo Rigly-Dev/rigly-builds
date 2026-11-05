@@ -112,6 +112,8 @@ fi
 #  - ICU 75+ headers need C++17, but 7.4/8.0's ext/intl asks for C++11.
 case "$MINOR" in 7.4|8.0)
     spc extract php-src --source-only
+    # On Linux the sources were unpacked inside the build container, so they are owned by root.
+    if [ ! -w "$WORK/source/php-src/ext/gd/config.m4" ]; then sudo chown -R "$(id -u):$(id -g)" "$WORK/source"; fi
     # The test program links every static library configured so far and crashes at start-up on
     # 7.4 (SIGILL) even with a valid test body; drop the test. Our smoke test still runs the
     # finished binary, so a real crash would fail the build there.

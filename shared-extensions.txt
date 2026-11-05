@@ -2,3 +2,4 @@
 xdebug
 pcov
 opcache <8.0   # zend_extension; Rigly always enables it
+spx              # SPX profiler (macOS/Linux; Rigly's Profiler switch)

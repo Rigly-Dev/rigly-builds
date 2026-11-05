@@ -126,12 +126,16 @@ case "$MINOR" in 7.4|8.0)
     # finished binary, so a real crash would fail the build there.
     perl -0pi -e 's/PHP_TEST_BUILD\(foobar,.*?\[char foobar[^\]]*\]\)/dnl Rigly: GD build test removed/s' "$WORK/source/php-src/ext/gd/config.m4"
     perl -pi -e 's/PHP_CXX_COMPILE_STDCXX\(11,/PHP_CXX_COMPILE_STDCXX(17,/' "$WORK/source/php-src/ext/intl/config.m4"
+    # ICU's own flags (added after PHP's) carry -std=c++11, and the last -std wins: force 17 at the end.
+    perl -pi -e 's/^(\s*PHP_INTL_CXX_FLAGS="\$INTL_COMMON_FLAGS \$PHP_INTL_STDCXX \$ICU_CXXFLAGS)"/$1 -std=c++17"/' "$WORK/source/php-src/ext/intl/config.m4"
+    grep -q 'ICU_CXXFLAGS -std=c++17"' "$WORK/source/php-src/ext/intl/config.m4" || { echo "intl -std patch failed" >&2; exit 1; }
     grep -q 'Rigly: GD build test removed' "$WORK/source/php-src/ext/gd/config.m4" || { echo "GD patch failed" >&2; exit 1; }
     grep -q 'PHP_CXX_COMPILE_STDCXX(17,' "$WORK/source/php-src/ext/intl/config.m4" || { echo "intl patch failed" >&2; exit 1; }
     # Where a PHP is on PATH (the Linux build container), make regenerates extensions' *_arginfo.h
     # from their stubs with 8.0's gen_stub.php, which can't parse newer stubs (ext-zstd's `const`:
-    # "Unexpected node Stmt_Const"). Extensions ship their arginfo headers, so keep those.
-    rm -f "$WORK/source/php-src/build/gen_stub.php"
+    # "Unexpected node Stmt_Const"). Extensions ship their arginfo headers, so keep those: make the
+    # generator a no-op (the file must stay, `make install-build` copies it).
+    printf '<?php\n// Rigly: arginfo regeneration disabled for PHP %s builds.\n' "$MINOR" > "$WORK/source/php-src/build/gen_stub.php"
     ;;
 esac
 spc build "$STATIC_EXTS" --build-cli --build-fpm --build-shared="$SHARED_EXTS" --debug

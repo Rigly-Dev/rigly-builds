@@ -1,0 +1,107 @@
+name: Build MariaDB
+
+on:
+  workflow_dispatch:
+    inputs:
+      series:
+        description: "MariaDB release series to build (space-separated)"
+        default: "12.3 11.8 11.4 10.11"
+      runners:
+        description: "Runners (architectures) to build on"
+        default: "macos-15 macos-15-intel"
+      force:
+        description: "Rebuild even if the latest patch is already released"
+        type: boolean
+        default: false
+  schedule:
+    - cron: "0 4 * * 1"   # Mondays: pick up new patch releases
+
+permissions:
+  contents: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      any: ${{ steps.plan.outputs.any }}
+    steps:
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SERIES: ${{ inputs.series || '12.3 11.8 11.4 10.11' }}
+          RUNNERS: ${{ inputs.runners || 'macos-15 macos-15-intel' }}
+          FORCE: ${{ inputs.force || false }}
+        run: |
+          set -euo pipefail
+          entries=()
+          for series in $SERIES; do
+            full=$(curl -fsSL "https://downloads.mariadb.org/rest-api/mariadb/$series/latest/" | jq -r '.releases | keys[0] // empty')
+            if [ -z "$full" ]; then echo "::warning::No release for MariaDB $series"; continue; fi
+            if [ "$FORCE" != "true" ] && gh release view "mariadb-$full" -R "$GITHUB_REPOSITORY" --json assets \
+                 -q ".assets[].name" 2>/dev/null | grep -q "^mariadb-$full-macos-aarch64.tar.gz$"; then
+              echo "MariaDB $full already released; skipping"; continue
+            fi
+            echo "Will build MariaDB $full"
+            for runner in $RUNNERS; do entries+=("{\"version\":\"$full\",\"runner\":\"$runner\"}"); done
+          done
+          if [ ${#entries[@]} -eq 0 ]; then
+            echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"; echo "any=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "matrix={\"include\":[$(IFS=,; echo "${entries[*]}")]}" >> "$GITHUB_OUTPUT"; echo "any=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.any == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    name: MariaDB ${{ matrix.version }} (${{ matrix.runner }})
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build tools
+        run: brew list ninja >/dev/null 2>&1 || brew install ninja
+      - name: Build
+        run: scripts/build-mariadb.sh "${{ matrix.version }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mariadb-${{ matrix.version }}-${{ matrix.runner }}
+          path: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
+            dist/*.json
+          if-no-files-found: error
+
+  release:
+    needs: [plan, build]
+    if: ${{ !cancelled() && needs.plan.outputs.any == 'true' }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: publish-${{ github.workflow }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: mariadb-*
+      - name: Publish releases and manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for meta in artifacts/*/mariadb-*-macos-*.json; do
+            version=$(jq -r .version "$meta"); tag="mariadb-$version"
+            gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "MariaDB $version" \
+              --notes "MariaDB $version for Rigly (macOS), built from the official source release." --latest=false || true
+            base="${meta%.json}"
+            gh release upload "$tag" "$base.tar.gz" "$base.tar.gz.sha256" "$meta" --clobber
+          done
+          gh release download manifest -p manifest-mariadb.json -O previous.json 2>/dev/null || echo '{"schema":1,"mariadb":{}}' > previous.json
+          python3 scripts/make-service-manifest.py mariadb artifacts "$GITHUB_REPOSITORY" previous.json > manifest-mariadb.json
+          cat manifest-mariadb.json
+          gh release upload manifest manifest-mariadb.json --clobber

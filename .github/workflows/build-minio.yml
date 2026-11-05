@@ -1,0 +1,102 @@
+name: Build MinIO
+
+# MinIO no longer publishes free binaries, so Rigly builds the open-source (AGPL-3.0) server and
+# client (mc) from their latest release tags. Pure Go, cross-compiled on one Linux runner.
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Rebuild even if the latest release is already published"
+        type: boolean
+        default: false
+  schedule:
+    - cron: "0 5 * * 1"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: publish-${{ github.workflow }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find releases
+        id: tags
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force || false }}
+        run: |
+          set -euo pipefail
+          minio=$(gh api repos/minio/minio/releases/latest --jq .tag_name)
+          mc=$(gh api repos/minio/mc/releases/latest --jq .tag_name)
+          version="${minio#RELEASE.}"
+          echo "minio=$minio" >> "$GITHUB_OUTPUT"; echo "mc=$mc" >> "$GITHUB_OUTPUT"; echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$FORCE" != "true" ] && gh release view "minio-$version" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"; echo "MinIO $version already released"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Check out sources
+        if: steps.tags.outputs.skip == 'false'
+        run: |
+          git clone --depth 1 --branch "${{ steps.tags.outputs.minio }}" https://github.com/minio/minio src/minio
+          git clone --depth 1 --branch "${{ steps.tags.outputs.mc }}" https://github.com/minio/mc src/mc
+      - uses: actions/setup-go@v5
+        if: steps.tags.outputs.skip == 'false'
+        with:
+          go-version-file: src/minio/go.mod
+          cache: false
+      - name: Build
+        if: steps.tags.outputs.skip == 'false'
+        env:
+          VERSION: ${{ steps.tags.outputs.version }}
+          MINIO_TAG: ${{ steps.tags.outputs.minio }}
+          MC_TAG: ${{ steps.tags.outputs.mc }}
+        run: |
+          set -euo pipefail
+          # RELEASE.2025-10-15T17-29-55Z -> 2025-10-15T17:29:55Z (what gen-ldflags.go expects)
+          to_time() { echo "${1#RELEASE.}" | sed -E 's/T([0-9]+)-([0-9]+)-([0-9]+)Z/T\1:\2:\3Z/'; }
+          mkdir -p dist
+          for target in darwin/arm64:macos-aarch64 darwin/amd64:macos-x86_64 linux/amd64:linux-x86_64 \
+                        linux/arm64:linux-aarch64 windows/amd64:windows-x64; do
+            goos=${target%%/*}; rest=${target#*/}; goarch=${rest%%:*}; arch=${target##*:}
+            ext=$([ "$goos" = windows ] && echo .exe || true)
+            name="minio-$VERSION-$arch"; out="build/$name"; mkdir -p "$out"
+            (cd src/minio && CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -tags kqueue -trimpath \
+              --ldflags "$(MINIO_RELEASE=RELEASE go run buildscripts/gen-ldflags.go "$(to_time "$MINIO_TAG")")" -o "../../$out/minio$ext")
+            (cd src/mc && CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -tags kqueue -trimpath \
+              --ldflags "$(MC_RELEASE=RELEASE go run buildscripts/gen-ldflags.go "$(to_time "$MC_TAG")")" -o "../../$out/mc$ext")
+            cp src/minio/LICENSE "$out/LICENSE"
+            tar -C build -czf "dist/$name.tar.gz" "$name"
+            sha256sum "dist/$name.tar.gz" | awk '{print $1}' > "dist/$name.tar.gz.sha256"
+            printf '{"product":"minio","version":"%s","series":"latest","tag":"minio-%s","arch":"%s","minio":"%s","mc":"%s"}\n' \
+              "$VERSION" "$VERSION" "$arch" "$MINIO_TAG" "$MC_TAG" > "dist/$name.json"
+          done
+          # The Linux build runs here, so check it actually starts and serves.
+          ./build/minio-$VERSION-linux-x86_64/minio --version
+          ./build/minio-$VERSION-linux-x86_64/mc --version
+          export MINIO_ROOT_USER=rigly MINIO_ROOT_PASSWORD=riglyrigly
+          ./build/minio-$VERSION-linux-x86_64/minio server /tmp/minio-data --address 127.0.0.1:9900 --console-address 127.0.0.1:9901 &
+          for _ in $(seq 1 20); do curl -fs http://127.0.0.1:9900/minio/health/live && break; sleep 1; done
+          ./build/minio-$VERSION-linux-x86_64/mc alias set t http://127.0.0.1:9900 rigly riglyrigly
+          ./build/minio-$VERSION-linux-x86_64/mc mb t/smoke && ./build/minio-$VERSION-linux-x86_64/mc ls t
+          ls -la dist
+      - name: Publish release and manifest
+        if: steps.tags.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.tags.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="minio-$VERSION"
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "MinIO $VERSION" --latest=false \
+            --notes "MinIO server ${{ steps.tags.outputs.minio }} and client ${{ steps.tags.outputs.mc }}, built from source for Rigly. AGPL-3.0: source at https://github.com/minio/minio and https://github.com/minio/mc."
+          gh release upload "$tag" dist/* --clobber
+          mkdir -p artifacts/minio && cp dist/* artifacts/minio/
+          gh release download manifest -p manifest-minio.json -O previous.json 2>/dev/null || echo '{"schema":1,"minio":{}}' > previous.json
+          python3 scripts/make-service-manifest.py minio artifacts "$GITHUB_REPOSITORY" previous.json > manifest-minio.json
+          cat manifest-minio.json
+          gh release upload manifest manifest-minio.json --clobber

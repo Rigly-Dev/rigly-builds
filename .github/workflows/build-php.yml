@@ -133,7 +133,11 @@ jobs:
             gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "PHP $version" \
               --notes "PHP $version for Rigly. Extensions are listed in each build's .json." --latest=false || true
             base="${meta%.json}"
-            gh release upload "$tag" "$base.tar.gz" "$base.tar.gz.sha256" "$meta" --clobber
+            # --clobber deletes then re-uploads; GitHub sometimes answers 422 in between, so retry.
+            for attempt in 1 2 3; do
+              gh release upload "$tag" "$base.tar.gz" "$base.tar.gz.sha256" "$meta" --clobber && break
+              [ $attempt = 3 ] && exit 1; sleep 10
+            done
           done
 
           # manifest.json lives on a fixed "manifest" release so its URL never changes:

@@ -3,7 +3,7 @@
 #
 #   scripts/build-mariadb.sh 11.8.9
 #
-# Self-contained: bundled SSL (wolfSSL), zlib and PCRE; Homebrew/local libraries are ignored so the
+# Self-contained: static OpenSSL built here, bundled zlib and PCRE; Homebrew/local libraries are ignored so the
 # binaries only link macOS system libraries. Output: dist/mariadb-<version>-macos-<arch>.tar.gz
 # (+ .sha256, .json) containing bin/, lib/, share/, scripts/.
 set -euo pipefail
@@ -21,6 +21,18 @@ echo "Downloading MariaDB $VERSION source"
 curl -fsSL --retry 3 -o "$WORK/src.tar.gz" "https://archive.mariadb.org/mariadb-$VERSION/source/mariadb-$VERSION.tar.gz"
 tar -xzf "$WORK/src.tar.gz" -C "$WORK"
 
+# Static OpenSSL (LTS) for the server and its client library (Connector/C has no bundled TLS), so the
+# binaries need no OpenSSL dylib on the user's Mac.
+OPENSSL_VERSION="${OPENSSL_VERSION:-3.5.9}"
+OPENSSL="$WORK/openssl"
+echo "Building OpenSSL $OPENSSL_VERSION (static)"
+curl -fsSL --retry 3 -o "$WORK/openssl.tar.gz" \
+    "https://github.com/openssl/openssl/releases/download/openssl-$OPENSSL_VERSION/openssl-$OPENSSL_VERSION.tar.gz"
+tar -xzf "$WORK/openssl.tar.gz" -C "$WORK"
+(cd "$WORK/openssl-$OPENSSL_VERSION" && ./Configure "darwin64-$( [ "$ARCH" = aarch64 ] && echo arm64 || echo x86_64 )-cc" \
+    no-shared no-tests no-docs --prefix="$OPENSSL" --libdir=lib -mmacosx-version-min=13.0 >/dev/null \
+    && make -j"$(sysctl -n hw.ncpu)" >/dev/null && make install_sw >/dev/null)
+
 # Keep Homebrew (and anything else in /usr/local) out of the build.
 export PKG_CONFIG_PATH="" PKG_CONFIG_LIBDIR=""
 cmake -S "$WORK/mariadb-$VERSION" -B "$WORK/obj" -G Ninja \
@@ -28,7 +40,8 @@ cmake -S "$WORK/mariadb-$VERSION" -B "$WORK/obj" -G Ninja \
     -DCMAKE_INSTALL_PREFIX=/opt/rigly-mariadb \
     -DCMAKE_IGNORE_PREFIX_PATH="/opt/homebrew;/usr/local" \
     -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
-    -DWITH_SSL=bundled -DWITH_ZLIB=bundled -DWITH_PCRE=bundled \
+    -DWITH_SSL="$OPENSSL" -DOPENSSL_ROOT_DIR="$OPENSSL" -DOPENSSL_USE_STATIC_LIBS=TRUE \
+    -DWITH_ZLIB=bundled -DWITH_PCRE=bundled \
     -DWITH_UNIT_TESTS=OFF -DWITH_WSREP=OFF -DWITH_EMBEDDED_SERVER=OFF -DWITH_MARIABACKUP=OFF \
     -DPLUGIN_ROCKSDB=NO -DPLUGIN_MROONGA=NO -DPLUGIN_SPIDER=NO -DPLUGIN_CONNECT=NO -DPLUGIN_S3=NO \
     -DPLUGIN_OQGRAPH=NO -DPLUGIN_COLUMNSTORE=NO -DPLUGIN_TOKUDB=NO -DPLUGIN_HASHICORP_KEY_MANAGEMENT=NO \

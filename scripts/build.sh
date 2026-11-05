@@ -40,9 +40,10 @@ esac
 # static-php-cli rejects OPcache below 8.0 even when it's built shared (as we do for 7.4); its
 # guard is meant for the static case. Set via config/env.custom.ini, which spc reads on macOS and
 # inside the Linux container (where shell environment variables aren't passed through).
+# The value is quoted: unquoted, PHP's INI parser turns "yes" into "1" and spc compares against "yes".
 mkdir -p "$WORK/config"
 if [ "$MINOR" = 7.4 ]; then
-    printf '[global]\nSPC_SKIP_PHP_VERSION_CHECK=yes\n' > "$WORK/config/env.custom.ini"
+    printf '[global]\nSPC_SKIP_PHP_VERSION_CHECK="yes"\n' > "$WORK/config/env.custom.ini"
 else
     rm -f "$WORK/config/env.custom.ini"
 fi

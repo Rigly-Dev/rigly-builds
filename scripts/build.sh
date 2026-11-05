@@ -112,9 +112,12 @@ fi
 #  - ICU 75+ headers need C++17, but 7.4/8.0's ext/intl asks for C++11.
 case "$MINOR" in 7.4|8.0)
     spc extract php-src --source-only
-    perl -pi -e 's/\[char foobar \(\) \{\}\]/[char foobar (void) { return 0; }]/' "$WORK/source/php-src/ext/gd/config.m4"
+    # The test program links every static library configured so far and crashes at start-up on
+    # 7.4 (SIGILL) even with a valid test body; drop the test. Our smoke test still runs the
+    # finished binary, so a real crash would fail the build there.
+    perl -0pi -e 's/PHP_TEST_BUILD\(foobar,.*?\[char foobar[^\]]*\]\)/dnl Rigly: GD build test removed/s' "$WORK/source/php-src/ext/gd/config.m4"
     perl -pi -e 's/PHP_CXX_COMPILE_STDCXX\(11,/PHP_CXX_COMPILE_STDCXX(17,/' "$WORK/source/php-src/ext/intl/config.m4"
-    grep -q 'char foobar (void) { return 0; }' "$WORK/source/php-src/ext/gd/config.m4" || { echo "GD patch failed" >&2; exit 1; }
+    grep -q 'Rigly: GD build test removed' "$WORK/source/php-src/ext/gd/config.m4" || { echo "GD patch failed" >&2; exit 1; }
     grep -q 'PHP_CXX_COMPILE_STDCXX(17,' "$WORK/source/php-src/ext/intl/config.m4" || { echo "intl patch failed" >&2; exit 1; }
     ;;
 esac

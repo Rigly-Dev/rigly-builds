@@ -1,0 +1,117 @@
+name: Build Valkey (Windows)
+
+# Valkey (the open-source Redis fork) has no Windows build, so Rigly compiles it with MSYS2
+# (a POSIX layer for Windows) and ships the MSYS2 runtime DLLs it needs alongside the .exe files.
+# Approach follows github.com/redis-windows/redis-windows.
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Rebuild even if the latest release is already published"
+        type: boolean
+        default: false
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    concurrency:
+      group: publish-${{ github.workflow }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find release
+        id: tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force || false }}
+        run: |
+          set -euo pipefail
+          version=$(gh api repos/valkey-io/valkey/releases/latest --jq .tag_name)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$FORCE" != "true" ] && gh release view "valkey-$version" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"; echo "Valkey $version already released"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            curl -fsSL -o valkey.tar.gz "https://github.com/valkey-io/valkey/archive/refs/tags/$version.tar.gz"
+          fi
+
+      - uses: msys2/setup-msys2@v2
+        if: steps.tag.outputs.skip == 'false'
+        with:
+          update: true
+          install: gcc make pkg-config zip
+
+      - name: Build
+        if: steps.tag.outputs.skip == 'false'
+        shell: msys2 {0}
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          set -euo pipefail
+          # dladdr() is behind a GNU-only guard in MSYS2's headers.
+          sed -i 's/__GNU_VISIBLE/1/' /usr/include/dlfcn.h
+          tar -xzf valkey.tar.gz
+          cd "valkey-$VERSION/src"
+          [ -x ./mkreleasehdr.sh ] && ./mkreleasehdr.sh || true
+          # Module tests don't build on Windows and aren't needed.
+          sed -i 's/^\(all: .*\) module_tests$/\1/' Makefile
+          cd ..
+          make BUILD_TLS=no MALLOC=libc CFLAGS="-Wno-char-subscripts" -j"$(nproc)"
+
+          name="valkey-$VERSION-windows-x64"
+          out="$GITHUB_WORKSPACE/dist/$name"
+          mkdir -p "$out"
+          for exe in valkey-server valkey-cli valkey-benchmark; do cp "src/$exe.exe" "$out/"; done
+          cp valkey.conf COPYING "$out/" 2>/dev/null || cp valkey.conf "$out/"
+          # Every MSYS2 DLL the programs load (msys-2.0.dll and friends).
+          for dll in $(ldd "$out"/*.exe | awk '/msys/ {print $3}' | sort -u); do cp "$dll" "$out/"; done
+          ls -la "$out"
+          cd "$GITHUB_WORKSPACE/dist"
+          zip -q -r "$name.zip" "$name"
+          sha256sum "$name.zip" | awk '{print $1}' > "$name.zip.sha256"
+          printf '{"product":"valkey","version":"%s","series":"%s","arch":"windows-x64","tag":"valkey-%s"}\n' \
+            "$VERSION" "${VERSION%%.*}" "$VERSION" > "$name.json"
+
+      - name: Smoke test
+        if: steps.tag.outputs.skip == 'false'
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          $dir = "dist\valkey-$env:VERSION-windows-x64"
+          $v = & "$dir\valkey-server.exe" --version
+          Write-Host $v
+          if ($v -notmatch [regex]::Escape($env:VERSION)) { throw "version mismatch: $v" }
+          $server = Start-Process -PassThru -NoNewWindow -FilePath "$dir\valkey-server.exe" -ArgumentList "--port 6390 --save """""
+          try {
+            Start-Sleep -Seconds 3
+            & "$dir\valkey-cli.exe" -p 6390 SET rigly works | Out-Null
+            $got = & "$dir\valkey-cli.exe" -p 6390 GET rigly
+            if ($got -ne "works") { throw "GET returned '$got'" }
+            Write-Host "SET/GET ok"
+          } finally { Stop-Process -Id $server.Id -ErrorAction SilentlyContinue }
+
+      - name: Publish release and manifest
+        if: steps.tag.outputs.skip == 'false'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="valkey-$VERSION"
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "Valkey $VERSION (Windows)" --latest=false \
+            --notes "Valkey $VERSION built for Windows with MSYS2, for Rigly. BSD-3-Clause; source: https://github.com/valkey-io/valkey"
+          gh release upload "$tag" dist/*.zip dist/*.zip.sha256 dist/*.json --clobber
+          mkdir -p artifacts/valkey && cp dist/*.zip dist/*.zip.sha256 dist/*.json artifacts/valkey/
+          gh release download manifest -p manifest-valkey.json -O previous.json 2>/dev/null || echo '{"schema":1,"valkey":{}}' > previous.json
+          python scripts/make-service-manifest.py valkey artifacts "$GITHUB_REPOSITORY" previous.json > manifest-valkey.json
+          cat manifest-valkey.json
+          gh release upload manifest manifest-valkey.json --clobber

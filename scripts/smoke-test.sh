@@ -39,7 +39,7 @@ check "pdo_sqlite is complete" "$PHP" -n -r '
 '
 check "pdo_pgsql registered" "$PHP" -n -r 'exit(extension_loaded("pdo_pgsql") && in_array("pgsql", PDO::getAvailableDrivers()) ? 0 : 1);'
 check "imagick renders" "$PHP" -n -r '$i = new Imagick("logo:"); $i->setImageFormat("png"); exit(strlen($i->getImageBlob()) > 1000 ? 0 : 1);'
-check "intl works (with ICU data)" "$PHP" -n -r 'exit(str_contains((new NumberFormatter("de_DE", NumberFormatter::DECIMAL))->format(1234.5), "1.234,5") ? 0 : 1);'
+check "intl works (with ICU data)" "$PHP" -n -r 'exit(strpos((new NumberFormatter("de_DE", NumberFormatter::DECIMAL))->format(1234.5), "1.234,5") !== false ? 0 : 1);'
 check "openssl + curl https" "$PHP" -n -r 'exit(in_array("https", curl_version()["protocols"]) && openssl_random_pseudo_bytes(8) ? 0 : 1);'
 
 check "no pre-release shared extensions" "$PHP" -n -r '
@@ -53,9 +53,9 @@ check "no pre-release shared extensions" "$PHP" -n -r '
 
 for so in "$DIR"/ext/*.so; do
     name="$(basename "$so" .so)"
-    directive=extension
-    [ "$name" = xdebug ] && directive=zend_extension
-    check "$name.so loads" "$PHP" -n -d "$directive=$so" -r "exit(extension_loaded('$name') ? 0 : 1);"
+    directive=extension module="$name"
+    case "$name" in xdebug) directive=zend_extension ;; opcache) directive=zend_extension module="Zend OPcache" ;; esac
+    check "$name.so loads" "$PHP" -n -d "$directive=$so" -r "exit(extension_loaded('$module') ? 0 : 1);"
 done
 
 exit $fail

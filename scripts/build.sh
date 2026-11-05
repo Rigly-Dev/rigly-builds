@@ -25,7 +25,7 @@ case "$(uname -m)" in
 esac
 # Newer autoconf switches clang to C23 (-std=gnu23), which removed the K&R-style function
 # definitions PHP 8.1/8.2 still use (e.g. ext/bcmath). Tell configure C23 isn't available.
-case "$MINOR" in 8.1|8.2) export ac_cv_prog_cc_c23=no ;; esac
+case "$MINOR" in 7.4|8.0|8.1|8.2) export ac_cv_prog_cc_c23=no ;; esac
 
 ROOT="$(pwd)"
 SPC_VERSION="${SPC_VERSION:-2.8.5}"
@@ -40,11 +40,26 @@ esac
 # Runs static-php-cli from its working directory (paths below are relative to it).
 spc() { (cd "$WORK" && "$SPC_BIN" "$@"); }
 
-# Reads an extension list, dropping comments and entries excluded for this minor ("name !8.5").
+# True if version $1 >= version $2.
+version_ge() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -1)" = "$2" ]; }
+# True if every version rule ("!8.5", ">=8.2", "<8.4") matches this PHP minor version.
+rules_match() {
+    local rule
+    for rule in "$@"; do
+        case "$rule" in
+            !*) [ "$MINOR" != "${rule#!}" ] || return 1 ;;
+            ">="*) version_ge "$MINOR" "${rule#>=}" || return 1 ;;
+            "<"*) ! version_ge "$MINOR" "${rule#<}" || return 1 ;;
+            *) echo "unknown version rule '$rule'" >&2; exit 1 ;;
+        esac
+    done
+}
+# Reads an extension list, dropping comments and entries whose version rules don't match.
 read_list() {
-    sed -e 's/#.*//' "$1" | while read -r name flags; do
+    sed -e 's/#.*//' "$1" | while read -r name rules; do
         [ -z "$name" ] && continue
-        case " $flags " in *" !$MINOR "*) echo "skipping $name for PHP $MINOR" >&2; continue ;; esac
+        # shellcheck disable=SC2086
+        rules_match $rules || { echo "skipping $name for PHP $MINOR" >&2; continue; }
         echo "$name"
     done | paste -sd, -
 }
@@ -59,8 +74,11 @@ echo "shared: $SHARED_EXTS"
 # Pinned sources (pinned-sources.txt) override static-php-cli's default download URLs.
 PIN_ARGS=()
 PINNED=php-src
-while read -r src url; do
+while read -r src url rules; do
     [ -z "$src" ] && continue
+    # shellcheck disable=SC2086
+    rules_match $rules || continue
+    echo "pinned: $src $url"
     PIN_ARGS+=(-U "$src:$url")
     PINNED="$PINNED,$src"
 done < <(sed -e 's/#.*//' pinned-sources.txt)
@@ -107,9 +125,10 @@ loaded = sorted({m.strip() for m in modules.splitlines() if m.strip() and not m.
 # Version of each loadable extension, so pre-releases can't slip in unnoticed.
 shared_versions = {}
 for name in (shared.split(",") if shared else []):
-    directive = "zend_extension" if name == "xdebug" else "extension"
+    directive = "zend_extension" if name in ("xdebug", "opcache") else "extension"
+    module = "Zend OPcache" if name == "opcache" else name
     so = os.path.abspath(os.path.join(out, "ext", f"{name}.so"))
-    v = subprocess.run([os.path.join(out, "php"), "-n", "-d", f"{directive}={so}", "-r", f"echo phpversion('{name}');"],
+    v = subprocess.run([os.path.join(out, "php"), "-n", "-d", f"{directive}={so}", "-r", f"echo phpversion('{module}');"],
                        capture_output=True, text=True).stdout.strip()
     shared_versions[name] = v if re.fullmatch(r"[0-9][0-9A-Za-z.\-]*", v) else ""
 json.dump({

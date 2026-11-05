@@ -1,3 +1,4 @@
 # Built as loadable .so files; Rigly enables them per PHP version (off by default).
 xdebug
 pcov
+opcache <8.0   # zend_extension; Rigly always enables it

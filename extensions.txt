@@ -1,6 +1,6 @@
 # Extensions compiled into every Rigly PHP build (static-php-cli names).
-# One per line. Append "!8.1" (etc.) to skip an extension for a PHP minor version,
-# e.g. when it doesn't support that version yet:   swoole !8.5
+# One per line, optionally followed by version rules (all must match for it to be included):
+#   !8.5    not on PHP 8.5        >=8.2   PHP 8.2 and later        <8.4   before PHP 8.4
 #
 # Shared (loadable, toggled by Rigly) extensions are listed in shared-extensions.txt.
 
@@ -22,7 +22,7 @@ iconv
 intl
 mbregex
 mbstring
-opcache
+opcache >=8.0   # PHP 7.4 can only load OPcache as a shared extension (see shared-extensions.txt)
 openssl
 pcntl
 phar
@@ -73,14 +73,14 @@ imagick
 
 # Async / networking / observability
 event
-swoole !8.1   # current Swoole requires PHP 8.2+
+swoole >=8.2   # current Swoole requires PHP 8.2+
 grpc
 # protobuf: omitted, it conflicts with grpc (which bundles protobuf). The google/protobuf
 # Composer package falls back to its pure-PHP implementation.
-opentelemetry
+opentelemetry >=8.1
 excimer
 
 # Misc
-imap !8.4 !8.5   # removed from PHP core in 8.4 (now PECL)
+imap <8.4   # removed from PHP core in 8.4 (now PECL)
 uuid
 zstd

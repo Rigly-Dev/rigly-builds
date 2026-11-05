@@ -37,6 +37,16 @@ case "$(uname -s)" in
         ;;
     *) echo "unsupported OS $(uname -s)" >&2; exit 1 ;;
 esac
+# static-php-cli rejects OPcache below 8.0 even when it's built shared (as we do for 7.4); its
+# guard is meant for the static case. Set via config/env.custom.ini, which spc reads on macOS and
+# inside the Linux container (where shell environment variables aren't passed through).
+mkdir -p "$WORK/config"
+if [ "$MINOR" = 7.4 ]; then
+    printf '[global]\nSPC_SKIP_PHP_VERSION_CHECK=yes\n' > "$WORK/config/env.custom.ini"
+else
+    rm -f "$WORK/config/env.custom.ini"
+fi
+
 # Runs static-php-cli from its working directory (paths below are relative to it).
 spc() { (cd "$WORK" && "$SPC_BIN" "$@"); }
 

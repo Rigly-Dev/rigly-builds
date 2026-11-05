@@ -1,0 +1,4 @@
+# Sources pinned to a specific release instead of static-php-cli's default ("latest", which can
+# be a pre-release). Format: <spc source name> <url>
+# Xdebug 3.5.3 is the current stable and supports PHP 8.0–8.5 (3.6 is alpha and drops 8.1).
+xdebug https://pecl.php.net/get/xdebug-3.5.3.tgz

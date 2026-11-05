@@ -81,7 +81,8 @@ jobs:
       - name: Build
         env:
           GITHUB_TOKEN: ${{ github.token }} # spc uses it to avoid GitHub API rate limits
-        run: scripts/build.sh "${{ matrix.php }}"
+        # One retry: the build container fetches tools from mirrors that occasionally time out.
+        run: scripts/build.sh "${{ matrix.php }}" || { echo "::warning::Build failed; retrying once"; sleep 60; scripts/build.sh "${{ matrix.php }}"; }
 
       - name: Upload build logs on failure
         if: failure()

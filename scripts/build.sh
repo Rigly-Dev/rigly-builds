@@ -56,10 +56,19 @@ echo "shared: $SHARED_EXTS"
 
 # On Linux the Docker image runs doctor while it is built.
 [ "$PLATFORM" = macos ] && spc doctor --auto-fix
-# The downloads cache may come from another PHP version's job; always fetch php-src itself fresh,
-# or static-php-cli reuses the cached one and builds the wrong version.
+# Pinned sources (pinned-sources.txt) override static-php-cli's default download URLs.
+PIN_ARGS=()
+PINNED=php-src
+while read -r src url; do
+    [ -z "$src" ] && continue
+    PIN_ARGS+=(-U "$src:$url")
+    PINNED="$PINNED,$src"
+done < <(sed -e 's/#.*//' pinned-sources.txt)
+
+# The downloads cache may come from another PHP version's job; always fetch php-src (and pinned
+# sources) fresh, or static-php-cli reuses the cached copies and builds the wrong version.
 spc download --with-php="$PHP_VERSION" --for-extensions="$STATIC_EXTS,$SHARED_EXTS" --prefer-pre-built --retry=3 \
-    --ignore-cache-sources=php-src
+    --ignore-cache-sources="$PINNED" "${PIN_ARGS[@]}"
 spc build "$STATIC_EXTS" --build-cli --build-fpm --build-shared="$SHARED_EXTS" --debug
 
 BUILDROOT="$WORK/buildroot"
@@ -95,12 +104,21 @@ import json, subprocess, sys, datetime, os
 out, version, arch, static, shared, spc = sys.argv[1:]
 modules = subprocess.run([os.path.join(out, "php"), "-n", "-m"], capture_output=True, text=True, check=True).stdout
 loaded = sorted({m.strip() for m in modules.splitlines() if m.strip() and not m.startswith("[")}, key=str.lower)
+# Version of each loadable extension, so pre-releases can't slip in unnoticed.
+shared_versions = {}
+for name in (shared.split(",") if shared else []):
+    directive = "zend_extension" if name == "xdebug" else "extension"
+    so = os.path.join(out, "ext", f"{name}.so")
+    v = subprocess.run([os.path.join(out, "php"), "-n", "-d", f"{directive}={so}", "-r", f"echo phpversion('{name}');"],
+                       capture_output=True, text=True).stdout.strip()
+    shared_versions[name] = v
 json.dump({
     "php": version,
     "arch": arch,
     "extensions": loaded,
     "requested": static.split(","),
     "shared": shared.split(",") if shared else [],
+    "shared_versions": shared_versions,
     "built_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
     "spc": spc.strip(),
 }, open(os.path.join(out, "BUILD.json"), "w"), indent=2)

@@ -42,6 +42,10 @@ check "imagick renders" "$PHP" -n -r '$i = new Imagick("logo:"); $i->setImageFor
 check "intl works (with ICU data)" "$PHP" -n -r 'exit(strpos((new NumberFormatter("de_DE", NumberFormatter::DECIMAL))->format(1234.5), "1.234,5") !== false ? 0 : 1);'
 check "openssl + curl https" "$PHP" -n -r 'exit(in_array("https", curl_version()["protocols"]) && openssl_random_pseudo_bytes(8) ? 0 : 1);'
 
+if [ "$(uname -s)" = Darwin ]; then
+    # c-ares ignores /etc/resolver/<tld>; curl must use the system resolver so local sites resolve.
+    check "curl uses the macOS resolver (no c-ares)" "$PHP" -n -r '$v = curl_version(); exit(empty($v["ares"]) && ($v["features"] & CURL_VERSION_ASYNCHDNS) ? 0 : 1);'
+fi
 check "no pre-release shared extensions" "$PHP" -n -r '
     $v = json_decode(file_get_contents($argv[1]), true)["shared_versions"] ?? [];
     foreach ($v as $name => $version) {

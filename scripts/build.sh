@@ -98,6 +98,14 @@ done < <(sed -e 's/#.*//' pinned-sources.txt)
 # sources) fresh, or static-php-cli reuses the cached copies and builds the wrong version.
 spc download --with-php="$PHP_VERSION" --for-extensions="$STATIC_EXTS,$SHARED_EXTS" --prefer-pre-built --retry=3 \
     --ignore-cache-sources="$PINNED" "${PIN_ARGS[@]}"
+# macOS: build curl without c-ares. gRPC/Swoole pull c-ares in and curl then uses it, but c-ares
+# ignores /etc/resolver/<tld>, so PHP couldn't reach other local sites (e.g. https://api.test).
+# Without it curl uses the system resolver (threaded), which honours per-domain resolvers.
+if [ "$PLATFORM" = macos ]; then
+    spc extract curl --source-only
+    perl -0pi -e 's/^(option\(ENABLE_ARES [^\n]*\))$/$1\nset(ENABLE_ARES OFF CACHE BOOL "Rigly: use the macOS resolver" FORCE)/m' "$WORK/source/curl/CMakeLists.txt"
+    grep -q 'Rigly: use the macOS resolver' "$WORK/source/curl/CMakeLists.txt" || { echo "curl c-ares patch failed" >&2; exit 1; }
+fi
 spc build "$STATIC_EXTS" --build-cli --build-fpm --build-shared="$SHARED_EXTS" --debug
 
 BUILDROOT="$WORK/buildroot"

@@ -100,7 +100,7 @@ jobs:
   package:
     needs: [plan, extension]
     # Package with whichever extensions built; the smoke test reports what's missing.
-    if: always() && needs.plan.outputs.any == 'true'
+    if: ${{ !cancelled() && needs.plan.outputs.any == 'true' }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.versions) }}
@@ -126,7 +126,7 @@ jobs:
 
   release:
     needs: [plan, package]
-    if: always() && needs.plan.outputs.any == 'true'
+    if: ${{ !cancelled() && needs.plan.outputs.any == 'true' }}
     runs-on: ubuntu-latest
     # Releases read-modify-write the manifest: never run two at once.
     concurrency:

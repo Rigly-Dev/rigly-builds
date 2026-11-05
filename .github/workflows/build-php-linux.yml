@@ -107,7 +107,7 @@ jobs:
   release:
     needs: [plan, build]
     # Publish whatever succeeded, even if some versions failed.
-    if: always() && needs.plan.outputs.any == 'true'
+    if: ${{ !cancelled() && needs.plan.outputs.any == 'true' }}
     runs-on: ubuntu-latest
     # Releases read-modify-write the manifest: never run two at once.
     concurrency:

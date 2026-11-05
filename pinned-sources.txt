@@ -11,3 +11,5 @@ mongodb https://pecl.php.net/get/mongodb-1.20.1.tgz <8.1
 # libxml2 2.14+ removed ATTRIBUTE_UNUSED, which PHP 7.4/8.0's ext/libxml uses (8.1+ were fixed upstream);
 # static-php-cli's spc_fix_libxml2_12_php80.patch targets 2.12.
 libxml2 https://github.com/GNOME/libxml2/archive/refs/tags/v2.12.10.tar.gz <8.1
+# libxslt 1.1.45+ needs libxml2 2.15.1+; 1.1.39 matches the libxml2 2.12 pinned above.
+libxslt https://download.gnome.org/sources/libxslt/1.1/libxslt-1.1.39.tar.xz <8.1

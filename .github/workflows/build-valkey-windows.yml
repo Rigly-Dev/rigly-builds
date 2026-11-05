@@ -63,12 +63,14 @@ jobs:
           # Module tests don't build on Windows and aren't needed.
           sed -i 's/^\(all: .*\) module_tests$/\1/' Makefile
           cd ..
-          make BUILD_TLS=no MALLOC=libc CFLAGS="-Wno-char-subscripts" -j"$(nproc)"
+          # Only the server and CLI (the benchmark and unit tests need more porting and aren't used).
+          # _GNU_SOURCE exposes asprintf() and friends in MSYS2's headers.
+          make -C src BUILD_TLS=no MALLOC=libc CFLAGS="-Wno-char-subscripts -D_GNU_SOURCE" -j"$(nproc)" valkey-server valkey-cli
 
           name="valkey-$VERSION-windows-x64"
           out="$GITHUB_WORKSPACE/dist/$name"
           mkdir -p "$out"
-          for exe in valkey-server valkey-cli valkey-benchmark; do cp "src/$exe.exe" "$out/"; done
+          for exe in valkey-server valkey-cli; do cp "src/$exe.exe" "$out/"; done
           cp valkey.conf COPYING "$out/" 2>/dev/null || cp valkey.conf "$out/"
           # Every MSYS2 DLL the programs load (msys-2.0.dll and friends).
           for dll in $(ldd "$out"/*.exe | awk '/msys/ {print $3}' | sort -u); do cp "$dll" "$out/"; done

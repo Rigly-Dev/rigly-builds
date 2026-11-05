@@ -93,7 +93,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: logs-${{ matrix.php }}-${{ matrix.runner }}
-          path: spc-src/log/
+          path: |
+            spc-src/log/
+            spc-src/source/php-src/config.log
 
       - uses: actions/upload-artifact@v4
         with:

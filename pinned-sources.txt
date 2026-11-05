@@ -8,3 +8,6 @@ xdebug https://pecl.php.net/get/xdebug-3.1.6.tgz <8.0
 sqlsrv https://pecl.php.net/get/sqlsrv-5.10.1.tgz <8.1
 pdo_sqlsrv https://pecl.php.net/get/pdo_sqlsrv-5.10.1.tgz <8.1
 mongodb https://pecl.php.net/get/mongodb-1.20.1.tgz <8.1
+# libxml2 2.14+ removed ATTRIBUTE_UNUSED, which PHP 7.4/8.0's ext/libxml uses (8.1+ were fixed upstream);
+# static-php-cli's spc_fix_libxml2_12_php80.patch targets 2.12.
+libxml2 https://github.com/GNOME/libxml2/archive/refs/tags/v2.12.10.tar.gz <8.1

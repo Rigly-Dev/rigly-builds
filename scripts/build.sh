@@ -134,8 +134,17 @@ case "$MINOR" in 7.4|8.0)
     # 7.4 names its embed library libphp7.a; static-php-cli expects PHP 8's libphp.a.
     if [ "$MINOR" = 7.4 ]; then
         perl -pi -e 's/libphp\[\]\$PHP_MAJOR_VERSION/libphp/g' "$WORK/source/php-src/configure.ac" "$WORK/source/php-src/build/php.m4"
-        ! grep -q 'libphp\[\]\$PHP_MAJOR_VERSION' "$WORK/source/php-src/configure.ac" "$WORK/source/php-src/build/php.m4" \
+        perl -pi -e 's/libphp\$\(PHP_MAJOR_VERSION\)/libphp/g' "$WORK/source/php-src/build/Makefile.global"
+        ! grep -qE 'libphp(\[\]\$PHP_MAJOR_VERSION|\$\(PHP_MAJOR_VERSION\))' "$WORK/source/php-src/configure.ac" \
+            "$WORK/source/php-src/build/php.m4" "$WORK/source/php-src/build/Makefile.global" \
             || { echo "libphp name patch failed" >&2; exit 1; }
+    fi
+    # zend_string_equal_val's x86_64 inline asm uses labels like ".LL0"; in Mach-O only "L…" labels are local,
+    # so ".LL…" become symbols, the linker treats them as separate atoms, and the function gets split apart:
+    # the Intel macOS CLI aborts at startup (stack-protector failure in module startup). Make them local.
+    if [ "$(uname -s)" = Darwin ]; then
+        perl -pi -e 's/\.LL(\d)/LL$1/g' "$WORK/source/php-src/Zend/zend_string.c"
+        ! grep -q '\.LL[0-9]' "$WORK/source/php-src/Zend/zend_string.c" || { echo "asm label patch failed" >&2; exit 1; }
     fi
     # sqlsrv/pdo_sqlsrv 5.10 (pinned below 8.1) append -std=c++11 to the global CXXFLAGS, which come
     # after intl's -std=c++17 and win; ICU 75+ headers need C++17.
@@ -155,9 +164,9 @@ BUILD_FLAGS=()
 # PHP 8.0's OPcache JIT (x86_64 only; arm64 has no JIT before 8.1) makes the Intel macOS binary abort at
 # startup with a stack-protector failure during module startup. 7.4 has no JIT.
 if [ "$MINOR" = 8.0 ] && [ "$(uname -s)" = Darwin ] && [ "$(uname -m)" = x86_64 ]; then
-    # Diagnosing an abort at startup (stack-protector failure in a module's startup): keep symbols so
-    # the backtrace names the function. Temporary.
-    BUILD_FLAGS+=(--disable-opcache-jit --no-strip)
+    # Kept off while the startup abort was diagnosed (the cause was zend_string.c's asm labels, patched
+    # above); the JIT matters little for local development.
+    BUILD_FLAGS+=(--disable-opcache-jit)
 fi
 spc build "$STATIC_EXTS" --build-cli --build-fpm --build-shared="$SHARED_EXTS" --debug ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"}
 

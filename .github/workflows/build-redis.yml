@@ -1,0 +1,139 @@
+name: Build Redis
+
+# Redis publishes no macOS binaries, and compiling it on people's Macs needs the Xcode Command Line Tools
+# (and Redis 8's bundled modules need Rust, CMake and more). So Rigly builds the server and CLI here, from the
+# official source release, for Apple silicon and Intel. The modules (RedisJSON, RediSearch, …) are left out.
+on:
+  workflow_dispatch:
+    inputs:
+      series:
+        description: "Redis major versions to build (space-separated)"
+        default: "8"
+      force:
+        description: "Rebuild even if the latest release is already published"
+        type: boolean
+        default: false
+  schedule:
+    - cron: "0 6 * * 1"   # Mondays: pick up new patch releases
+
+permissions:
+  contents: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      any: ${{ steps.plan.outputs.any }}
+    steps:
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SERIES: ${{ inputs.series || '8' }}
+          FORCE: ${{ inputs.force || false }}
+        run: |
+          set -euo pipefail
+          listing=$(curl -fsSL https://download.redis.io/releases/)
+          entries=()
+          for series in $SERIES; do
+            full=$(printf '%s' "$listing" | grep -oE "redis-$series\.[0-9]+\.[0-9]+\.tar\.gz" | sed -E 's/redis-|\.tar\.gz//g' | sort -uV | tail -1)
+            if [ -z "$full" ]; then echo "::warning::No release for Redis $series"; continue; fi
+            if [ "$FORCE" != "true" ] && gh release view "redis-$full" -R "$GITHUB_REPOSITORY" --json assets \
+                 -q ".assets[].name" 2>/dev/null | grep -q "^redis-$full-macos-x86_64.tar.gz$"; then
+              echo "Redis $full already released; skipping"; continue
+            fi
+            echo "Will build Redis $full"
+            for runner in macos-15 macos-15-intel; do
+              entries+=("{\"version\":\"$full\",\"series\":\"$series\",\"runner\":\"$runner\"}")
+            done
+          done
+          if [ ${#entries[@]} -eq 0 ]; then
+            echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"; echo "any=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "matrix={\"include\":[$(IFS=,; echo "${entries[*]}")]}" >> "$GITHUB_OUTPUT"; echo "any=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.any == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    name: Redis ${{ matrix.version }} (${{ matrix.runner }})
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        env:
+          VERSION: ${{ matrix.version }}
+          SERIES: ${{ matrix.series }}
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in arm64) arch=macos-aarch64 ;; x86_64) arch=macos-x86_64 ;; esac
+          name="redis-$VERSION-$arch"
+          mkdir -p build dist "build/$name/bin"
+          curl -fsSL --retry 3 -o build/src.tar.gz "https://download.redis.io/releases/redis-$VERSION.tar.gz"
+          tar -xzf build/src.tar.gz -C build
+          # No TLS (no OpenSSL dylib needed) and no modules; runs on macOS 13 and later.
+          (cd "build/redis-$VERSION" && MACOSX_DEPLOYMENT_TARGET=13.0 \
+            make -j"$(sysctl -n hw.ncpu)" BUILD_TLS=no BUILD_WITH_MODULES=no)
+          for tool in redis-server redis-cli redis-benchmark; do
+            cp "build/redis-$VERSION/src/$tool" "build/$name/bin/"
+          done
+          cp build/redis-$VERSION/LICENSE* "build/$name/" 2>/dev/null || true
+
+          # Only macOS's own libraries, so it runs on any Mac.
+          for tool in build/$name/bin/*; do
+            if otool -L "$tool" | tail -n +2 | grep -vE '^\s+(/usr/lib/|/System/Library/)'; then
+              echo "::error::$tool links a non-system library"; exit 1
+            fi
+          done
+          # It starts and answers.
+          "build/$name/bin/redis-server" --port 6390 --save "" --daemonize yes
+          for _ in $(seq 1 20); do "build/$name/bin/redis-cli" -p 6390 ping 2>/dev/null | grep -q PONG && break; sleep 0.5; done
+          "build/$name/bin/redis-cli" -p 6390 set rigly ok
+          test "$("build/$name/bin/redis-cli" -p 6390 get rigly)" = ok
+          "build/$name/bin/redis-server" --version
+          "build/$name/bin/redis-cli" -p 6390 shutdown nosave || true
+
+          tar -C build -czf "dist/$name.tar.gz" "$name"
+          shasum -a 256 "dist/$name.tar.gz" | awk '{print $1}' > "dist/$name.tar.gz.sha256"
+          printf '{"product":"redis","version":"%s","series":"%s","arch":"%s"}\n' "$VERSION" "$SERIES" "$arch" > "dist/$name.json"
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: redis-${{ matrix.version }}-${{ matrix.runner }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: [plan, build]
+    if: ${{ !cancelled() && needs.plan.outputs.any == 'true' }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: publish-${{ github.workflow }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: redis-*
+      - name: Publish releases and manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for meta in artifacts/*/redis-*-macos-*.json; do
+            version=$(jq -r .version "$meta"); tag="redis-$version"
+            gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "Redis $version" --latest=false \
+              --notes "Redis $version (server, CLI and benchmark) for Rigly on macOS, built from the official source release without modules. Licence: see the LICENSE files in the archive; source at https://github.com/redis/redis." || true
+            base="${meta%.json}"
+            gh release upload "$tag" "$base.tar.gz" "$base.tar.gz.sha256" "$meta" --clobber
+          done
+          gh release download manifest -p manifest-redis.json -O previous.json 2>/dev/null || echo '{"schema":1,"redis":{}}' > previous.json
+          python3 scripts/make-service-manifest.py redis artifacts "$GITHUB_REPOSITORY" previous.json > manifest-redis.json
+          cat manifest-redis.json
+          gh release upload manifest manifest-redis.json --clobber

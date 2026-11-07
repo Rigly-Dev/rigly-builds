@@ -75,9 +75,11 @@ jobs:
           mkdir -p build dist "build/$name/bin"
           curl -fsSL --retry 3 -o build/src.tar.gz "https://download.redis.io/releases/redis-$VERSION.tar.gz"
           tar -xzf build/src.tar.gz -C build
-          # No TLS (no OpenSSL dylib needed) and no modules; runs on macOS 13 and later.
+          # Just Redis, from src/: the top-level make also builds the bundled modules whenever their source is
+          # present (it is, in the release tarball), and they need a newer GNU make, Rust and more.
+          # No TLS (no OpenSSL dylib needed); runs on macOS 13 and later.
           (cd "build/redis-$VERSION" && MACOSX_DEPLOYMENT_TARGET=13.0 \
-            make -j"$(sysctl -n hw.ncpu)" BUILD_TLS=no BUILD_WITH_MODULES=no)
+            make -C src -j"$(sysctl -n hw.ncpu)" BUILD_TLS=no)
           for tool in redis-server redis-cli redis-benchmark; do
             cp "build/redis-$VERSION/src/$tool" "build/$name/bin/"
           done
